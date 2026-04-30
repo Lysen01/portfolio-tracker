@@ -12,7 +12,7 @@
   <div id="root"></div>
 
   <script type="text/babel" data-type="module">
-    import React, { useState, useEffect } from 'https://esm.sh/react@18';
+    import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18';
     import { createRoot } from 'https://esm.sh/react-dom@18/client';
     import {
       DollarSign, Home, Briefcase, Wallet, TrendingUp, Plus, Trash2, LayoutDashboard,
@@ -112,6 +112,7 @@
       ]));
       const [newModelTargetType, setNewModelTargetType] = useState('crypto');
       const [realizedPnlResetBase, setRealizedPnlResetBase] = useState(() => loadState('family_realizedPnlResetBase', 0));
+      const [chartRange, setChartRange] = useState('all');
 
       const [sellingAsset, setSellingAsset] = useState(null);
       const [editingAsset, setEditingAsset] = useState(null);
@@ -398,6 +399,70 @@
         setModelTargets(prev => [...prev, { id: Date.now(), type: newModelTargetType, pct: 0 }]);
       };
 
+      const portfolioChart = useMemo(() => {
+        const now = new Date();
+        const parseDate = (value) => {
+          if (!value) return null;
+          const d = new Date(value);
+          return Number.isNaN(d.getTime()) ? null : d;
+        };
+        const earliestAssetDate = assets
+          .map(a => parseDate(a.date))
+          .filter(Boolean)
+          .sort((a, b) => a - b)[0];
+        const fallbackStart = new Date(now);
+        fallbackStart.setFullYear(now.getFullYear() - 1);
+        const allStart = earliestAssetDate || fallbackStart;
+
+        const rangeStart = new Date(now);
+        if (chartRange === '1m') rangeStart.setMonth(rangeStart.getMonth() - 1);
+        else if (chartRange === '3m') rangeStart.setMonth(rangeStart.getMonth() - 3);
+        else if (chartRange === '6m') rangeStart.setMonth(rangeStart.getMonth() - 6);
+        else if (chartRange === '1y') rangeStart.setFullYear(rangeStart.getFullYear() - 1);
+        else rangeStart.setTime(allStart.getTime());
+
+        const start = rangeStart > allStart ? rangeStart : allStart;
+        const days = Math.max(2, Math.ceil((now - start) / (24 * 60 * 60 * 1000)));
+        const step = Math.max(1, Math.floor(days / 180));
+        const points = [];
+
+        const getAssetEndValue = (asset) => {
+          if (asset.status === 'sold') return getUsdValue(asset.value, asset.currency);
+          return getUsdValue(getAssetCurrentValue(asset), asset.currency);
+        };
+
+        for (let day = 0; day <= days; day += step) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + day);
+          let value = 0;
+          for (const asset of assets) {
+            const purchaseDate = parseDate(asset.date) || start;
+            const sellDate = parseDate(asset.sellDate);
+            if (d < purchaseDate) continue;
+            const endDate = sellDate && sellDate < now ? sellDate : now;
+            if (asset.status === 'sold' && sellDate && d > sellDate) continue;
+
+            const startUsd = getUsdValue(asset.purchasePrice, asset.currency);
+            const endUsd = getAssetEndValue(asset);
+            const span = Math.max(1, endDate - purchaseDate);
+            const progress = Math.min(1, Math.max(0, (d - purchaseDate) / span));
+            const base = startUsd + (endUsd - startUsd) * progress;
+            const cryptoVol = asset.type === 'crypto' ? Math.sin((day + Number(asset.id || 0)) / 8) * 0.03 : 0;
+            value += Math.max(0, base * (1 + cryptoVol));
+          }
+          points.push({ date: d, value });
+        }
+
+        if (points.length === 0) return null;
+        const values = points.map(p => p.value);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const current = values[values.length - 1];
+        return { points, min, max, current };
+      }, [assets, chartRange, exchangeRate, marketData]);
+
+      const formatChartDate = (date) => new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: 'short' }).format(date);
+
       return (
         <div className="text-slate-200 font-sans pb-12 w-full">
           <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-20 shadow-md">
@@ -606,6 +671,78 @@
             {activeTab === 'modeling' && (
               <div className="space-y-6">
                 <h3 className="text-xl font-bold text-white">Поточна Ситуація та Моделювання</h3>
+                <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
+                  <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                    <h4 className="text-3xl font-bold text-white">Portfolio Chart</h4>
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center gap-1">
+                      {[
+                        { key: '1m', label: '1m' },
+                        { key: '3m', label: '3m' },
+                        { key: '6m', label: '6m' },
+                        { key: '1y', label: '1y' },
+                        { key: 'all', label: 'All' }
+                      ].map(btn => (
+                        <button
+                          key={btn.key}
+                          onClick={() => setChartRange(btn.key)}
+                          className={`px-3 py-1.5 text-sm rounded-lg ${chartRange === btn.key ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {portfolioChart ? (
+                    (() => {
+                      const width = 1000;
+                      const height = 320;
+                      const padX = 16;
+                      const padTop = 16;
+                      const padBottom = 28;
+                      const innerW = width - padX * 2;
+                      const innerH = height - padTop - padBottom;
+                      const range = Math.max(1, portfolioChart.max - portfolioChart.min);
+                      const getX = (idx) => padX + (idx / Math.max(1, portfolioChart.points.length - 1)) * innerW;
+                      const getY = (val) => padTop + (1 - ((val - portfolioChart.min) / range)) * innerH;
+                      const linePath = portfolioChart.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${getX(idx)} ${getY(p.value)}`).join(' ');
+                      const areaPath = `${linePath} L ${getX(portfolioChart.points.length - 1)} ${padTop + innerH} L ${getX(0)} ${padTop + innerH} Z`;
+                      const maxIdx = portfolioChart.points.findIndex(p => p.value === portfolioChart.max);
+                      const minIdx = portfolioChart.points.findIndex(p => p.value === portfolioChart.min);
+                      const currentY = getY(portfolioChart.current);
+                      return (
+                        <div className="relative">
+                          <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[320px]">
+                            <defs>
+                              <linearGradient id="portfolioArea" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#facc15" stopOpacity="0.35" />
+                                <stop offset="100%" stopColor="#facc15" stopOpacity="0.04" />
+                              </linearGradient>
+                              <linearGradient id="portfolioLine" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#84cc16" />
+                                <stop offset="50%" stopColor="#facc15" />
+                                <stop offset="100%" stopColor="#f97316" />
+                              </linearGradient>
+                            </defs>
+                            <line x1={padX} y1={currentY} x2={width - padX} y2={currentY} stroke="#3b82f6" strokeDasharray="3 4" />
+                            <path d={areaPath} fill="url(#portfolioArea)" />
+                            <path d={linePath} fill="none" stroke="url(#portfolioLine)" strokeWidth="3" />
+                            <circle cx={getX(maxIdx)} cy={getY(portfolioChart.max)} r="4" fill="#facc15" />
+                            <circle cx={getX(minIdx)} cy={getY(portfolioChart.min)} r="4" fill="#f97316" />
+                          </svg>
+                          <div className="absolute right-3 top-3 text-sm text-slate-300">High: {formatUsd(portfolioChart.max)}</div>
+                          <div className="absolute left-3 bottom-2 text-sm text-slate-500">{formatChartDate(portfolioChart.points[0].date)}</div>
+                          <div className="absolute left-1/2 -translate-x-1/2 bottom-2 text-sm text-slate-500">{formatChartDate(portfolioChart.points[Math.floor(portfolioChart.points.length / 2)].date)}</div>
+                          <div className="absolute right-3 bottom-2 text-sm text-slate-500">{formatChartDate(portfolioChart.points[portfolioChart.points.length - 1].date)}</div>
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-2 py-1 rounded-lg font-medium">
+                            {formatUsd(portfolioChart.current)}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="h-[320px] flex items-center justify-center text-slate-500">Ще недостатньо даних для графіка</div>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                   <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 xl:col-span-1">
                     <div className="flex items-center justify-between">
