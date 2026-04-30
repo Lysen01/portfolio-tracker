@@ -619,11 +619,15 @@
             const purchaseDate = parseDate(asset.date) || start;
             const sellDate = parseDate(asset.sellDate);
             if (d < purchaseDate) continue;
-            const endDate = sellDate && sellDate < now ? sellDate : now;
-            if (asset.status === 'sold' && sellDate && d > sellDate) continue;
 
             const startUsd = getUsdValue(asset.purchasePrice, asset.currency);
             const endUsd = getAssetEndValue(asset);
+            if (asset.status === 'sold' && sellDate && d > sellDate) {
+              // Після продажу вважаємо, що сума продажу залишається в портфелі як кеш.
+              value += Math.max(0, endUsd);
+              continue;
+            }
+            const endDate = asset.status === 'sold' && sellDate ? sellDate : now;
             const span = Math.max(1, endDate - purchaseDate);
             const progress = Math.min(1, Math.max(0, (d - purchaseDate) / span));
             const base = startUsd + (endUsd - startUsd) * progress;
@@ -927,13 +931,24 @@
                         .filter(asset => asset.date)
                         .map(asset => ({
                           id: `buy-${asset.id}`,
+                          type: 'buy',
                           date: new Date(asset.date),
                           name: asset.name || 'Актив',
                           amountUsd: getUsdValue(asset.purchasePrice, asset.currency)
-                        }))
+                        }));
+                      const sellEvents = assets
+                        .filter(asset => asset.sellDate)
+                        .map(asset => ({
+                          id: `sell-${asset.id}`,
+                          type: 'sell',
+                          date: new Date(asset.sellDate),
+                          name: asset.name || 'Актив',
+                          amountUsd: getUsdValue(asset.value, asset.currency)
+                        }));
+                      const tradeEvents = [...buyEvents, ...sellEvents]
                         .filter(event => !Number.isNaN(event.date.getTime()) && event.date >= chartStart && event.date <= chartEnd)
                         .sort((a, b) => a.date - b.date);
-                      const visibleBuyEvents = buyEvents.slice(-6).map((event, eventIdx) => {
+                      const visibleTradeEvents = tradeEvents.slice(-10).map((event, eventIdx) => {
                         const pointIdx = portfolioChart.points.findIndex(point => point.date >= event.date);
                         const idx = pointIdx === -1 ? portfolioChart.points.length - 1 : pointIdx;
                         const x = getX(idx);
@@ -961,16 +976,18 @@
                             <path d={linePath} fill="none" stroke="url(#portfolioLine)" strokeWidth="3" />
                             <circle cx={getX(maxIdx)} cy={getY(portfolioChart.max)} r="4" fill="#facc15" />
                             <circle cx={getX(minIdx)} cy={getY(portfolioChart.min)} r="4" fill="#f97316" />
-                            {visibleBuyEvents.map(event => {
+                            {visibleTradeEvents.map(event => {
                               const textY = Math.max(14, event.y - 12 - (event.eventIdx % 2) * 14);
                               const textX = event.alignRight ? event.x - 8 : event.x + 8;
+                              const markerColor = event.type === 'sell' ? '#ef4444' : '#22c55e';
+                              const prefix = event.type === 'sell' ? 'Прод.' : 'Куп.';
                               return (
                                 <g key={event.id}>
-                                  <circle cx={event.x} cy={event.y} r="4" fill="#22c55e" stroke="#0f172a" strokeWidth="1.5" />
+                                  <circle cx={event.x} cy={event.y} r="4" fill={markerColor} stroke="#0f172a" strokeWidth="1.5" />
                                   <text x={textX} y={textY} fill="#cbd5e1" fontSize="10" textAnchor={event.alignRight ? 'end' : 'start'}>
-                                    {`${formatChartDate(event.date)} • ${event.shortName} • ${formatUsd(event.amountUsd)}`}
+                                    {`${formatChartDate(event.date)} • ${prefix} ${event.shortName} • ${formatUsd(event.amountUsd)}`}
                                   </text>
-                                  <title>{`Купівля: ${event.name} | ${formatChartDate(event.date)} | ${formatUsd(event.amountUsd)}`}</title>
+                                  <title>{`${event.type === 'sell' ? 'Продаж' : 'Купівля'}: ${event.name} | ${formatChartDate(event.date)} | ${formatUsd(event.amountUsd)}`}</title>
                                 </g>
                               );
                             })}
