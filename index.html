@@ -799,6 +799,7 @@
                                         </div>
                                         <div className="text-xs text-slate-500 ml-3.5 mt-1">
                                           <span>Куплено: {formatDate(asset.date)}</span>
+                                          <span className="border-l border-slate-700 pl-2 ml-2">Продано: {formatDate(asset.sellDate)}</span>
                                           {isAutoPriced && marketData[asset.ticker] && (<span className="text-blue-400/70 border-l border-slate-700 pl-2 ml-2">Кількість: {asset.quantity} (Курс: {formatUsd(marketData[asset.ticker])})</span>)}
                                         </div>
                                       </div>
