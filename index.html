@@ -74,11 +74,12 @@
         business: { label: 'Бізнес та Обладнання', iconName: 'Briefcase', color: 'text-amber-400', bg: 'bg-amber-500' },
         cash: { label: 'Оборотні кошти (Кеш)', iconName: 'Coins', color: 'text-yellow-400', bg: 'bg-yellow-500' },
         crypto: { label: 'Криптовалюта та DeFi', iconName: 'Wallet', color: 'text-purple-400', bg: 'bg-purple-500' },
-        bonds: { label: 'Цінні папери та Резерви', iconName: 'TrendingUp', color: 'text-emerald-400', bg: 'bg-emerald-500' }
+        bonds: { label: 'Цінні папери та Резерви', iconName: 'TrendingUp', color: 'text-emerald-400', bg: 'bg-emerald-500' },
+        other: { label: 'Інше', iconName: 'DollarSign', color: 'text-cyan-400', bg: 'bg-cyan-500' }
       }));
 
       const [expandedGroups, setExpandedGroups] = useState(() => loadState('family_expandedGroups', {
-        real_estate: true, business: true, cash: true, crypto: true, bonds: true
+        real_estate: true, business: true, cash: true, crypto: true, bonds: true, other: true
       }));
 
       const [assets, setAssets] = useState(() => loadState('family_assets', [
@@ -125,6 +126,19 @@
       useEffect(() => { localStorage.setItem('family_marketChanges', JSON.stringify(marketChanges)); }, [marketChanges]);
       useEffect(() => { localStorage.setItem('family_modelTargets', JSON.stringify(modelTargets)); }, [modelTargets]);
       useEffect(() => { localStorage.setItem('family_realizedPnlResetBase', JSON.stringify(realizedPnlResetBase)); }, [realizedPnlResetBase]);
+
+      // Якщо старий localStorage не має категорії "Інше", додаємо її автоматично.
+      useEffect(() => {
+        if (!assetCategories.other) {
+          setAssetCategories(prev => ({
+            ...prev,
+            other: { label: 'Інше', iconName: 'DollarSign', color: 'text-cyan-400', bg: 'bg-cyan-500' }
+          }));
+        }
+        if (expandedGroups.other === undefined) {
+          setExpandedGroups(prev => ({ ...prev, other: true }));
+        }
+      }, [assetCategories, expandedGroups]);
 
       const fetchMarketData = async () => {
         setIsFetching(true);
