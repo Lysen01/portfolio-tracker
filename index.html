@@ -921,6 +921,27 @@
                       const maxIdx = portfolioChart.points.findIndex(p => p.value === portfolioChart.max);
                       const minIdx = portfolioChart.points.findIndex(p => p.value === portfolioChart.min);
                       const currentY = getY(portfolioChart.current);
+                      const chartStart = portfolioChart.points[0].date;
+                      const chartEnd = portfolioChart.points[portfolioChart.points.length - 1].date;
+                      const buyEvents = assets
+                        .filter(asset => asset.date)
+                        .map(asset => ({
+                          id: `buy-${asset.id}`,
+                          date: new Date(asset.date),
+                          name: asset.name || 'Актив',
+                          amountUsd: getUsdValue(asset.purchasePrice, asset.currency)
+                        }))
+                        .filter(event => !Number.isNaN(event.date.getTime()) && event.date >= chartStart && event.date <= chartEnd)
+                        .sort((a, b) => a.date - b.date);
+                      const visibleBuyEvents = buyEvents.slice(-6).map((event, eventIdx) => {
+                        const pointIdx = portfolioChart.points.findIndex(point => point.date >= event.date);
+                        const idx = pointIdx === -1 ? portfolioChart.points.length - 1 : pointIdx;
+                        const x = getX(idx);
+                        const y = getY(portfolioChart.points[idx].value);
+                        const alignRight = x > width - 220;
+                        const shortName = event.name.length > 12 ? `${event.name.slice(0, 12)}…` : event.name;
+                        return { ...event, idx, x, y, alignRight, shortName, eventIdx };
+                      });
                       return (
                         <div className="relative">
                           <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[320px]">
@@ -940,6 +961,19 @@
                             <path d={linePath} fill="none" stroke="url(#portfolioLine)" strokeWidth="3" />
                             <circle cx={getX(maxIdx)} cy={getY(portfolioChart.max)} r="4" fill="#facc15" />
                             <circle cx={getX(minIdx)} cy={getY(portfolioChart.min)} r="4" fill="#f97316" />
+                            {visibleBuyEvents.map(event => {
+                              const textY = Math.max(14, event.y - 12 - (event.eventIdx % 2) * 14);
+                              const textX = event.alignRight ? event.x - 8 : event.x + 8;
+                              return (
+                                <g key={event.id}>
+                                  <circle cx={event.x} cy={event.y} r="4" fill="#22c55e" stroke="#0f172a" strokeWidth="1.5" />
+                                  <text x={textX} y={textY} fill="#cbd5e1" fontSize="10" textAnchor={event.alignRight ? 'end' : 'start'}>
+                                    {`${formatChartDate(event.date)} • ${event.shortName} • ${formatUsd(event.amountUsd)}`}
+                                  </text>
+                                  <title>{`Купівля: ${event.name} | ${formatChartDate(event.date)} | ${formatUsd(event.amountUsd)}`}</title>
+                                </g>
+                              );
+                            })}
                           </svg>
                           <div className="absolute right-3 top-3 text-sm text-slate-300">High: {formatUsd(portfolioChart.max)}</div>
                           <div className="absolute left-3 bottom-2 text-sm text-slate-500">{formatChartDate(portfolioChart.points[0].date)}</div>
