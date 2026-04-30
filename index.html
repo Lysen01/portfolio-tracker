@@ -75,11 +75,12 @@
         cash: { label: 'Оборотні кошти (Кеш)', iconName: 'Coins', color: 'text-yellow-400', bg: 'bg-yellow-500' },
         crypto: { label: 'Криптовалюта та DeFi', iconName: 'Wallet', color: 'text-purple-400', bg: 'bg-purple-500' },
         bonds: { label: 'Цінні папери та Резерви', iconName: 'TrendingUp', color: 'text-emerald-400', bg: 'bg-emerald-500' },
+        precious_metals: { label: 'Цінні метали', iconName: 'Coins', color: 'text-orange-400', bg: 'bg-orange-500' },
         other: { label: 'Інше', iconName: 'DollarSign', color: 'text-cyan-400', bg: 'bg-cyan-500' }
       }));
 
       const [expandedGroups, setExpandedGroups] = useState(() => loadState('family_expandedGroups', {
-        real_estate: true, business: true, cash: true, crypto: true, bonds: true, other: true
+        real_estate: true, business: true, cash: true, crypto: true, bonds: true, precious_metals: true, other: true
       }));
 
       const [assets, setAssets] = useState(() => loadState('family_assets', [
@@ -135,8 +136,17 @@
             other: { label: 'Інше', iconName: 'DollarSign', color: 'text-cyan-400', bg: 'bg-cyan-500' }
           }));
         }
+        if (!assetCategories.precious_metals) {
+          setAssetCategories(prev => ({
+            ...prev,
+            precious_metals: { label: 'Цінні метали', iconName: 'Coins', color: 'text-orange-400', bg: 'bg-orange-500' }
+          }));
+        }
         if (expandedGroups.other === undefined) {
           setExpandedGroups(prev => ({ ...prev, other: true }));
+        }
+        if (expandedGroups.precious_metals === undefined) {
+          setExpandedGroups(prev => ({ ...prev, precious_metals: true }));
         }
       }, [assetCategories, expandedGroups]);
 
