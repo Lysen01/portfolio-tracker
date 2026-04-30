@@ -199,8 +199,35 @@
       const cryptoTotalPct = totalAssetsUsd > 0 ? (cryptoUsd / totalAssetsUsd) * 100 : 0;
       const realEstateTotalPct = totalAssetsUsd > 0 ? (realEstateUsd / totalAssetsUsd) * 100 : 0;
       const otherTotalPct = Math.max(100 - cryptoTotalPct - realEstateTotalPct, 0);
-      const donutStyle = {
-        background: `conic-gradient(#a855f7 0% ${cryptoTotalPct}%, #60a5fa ${cryptoTotalPct}% ${cryptoTotalPct + realEstateTotalPct}%, #334155 ${cryptoTotalPct + realEstateTotalPct}% 100%)`
+      const HOLDING_PALETTE = ['#60a5fa', '#818cf8', '#f472b6', '#facc15', '#22d3ee', '#cbd5e1'];
+      const holdingsByType = Object.entries(assetCategories).map(([typeKey, typeInfo]) => ({
+        key: typeKey,
+        label: typeInfo.label,
+        usd: activeAssets
+          .filter(a => a.type === typeKey)
+          .reduce((sum, a) => sum + getUsdValue(getAssetCurrentValue(a), a.currency), 0)
+      })).filter(item => item.usd > 0).sort((a, b) => b.usd - a.usd);
+      const primaryHoldings = holdingsByType.slice(0, 5).map((item, idx) => ({
+        ...item,
+        color: HOLDING_PALETTE[idx]
+      }));
+      const remainingUsd = holdingsByType.slice(5).reduce((sum, item) => sum + item.usd, 0);
+      const holdingsSegments = remainingUsd > 0
+        ? [...primaryHoldings, { key: 'other_holdings', label: 'Інші активи', usd: remainingUsd, color: HOLDING_PALETTE[5] }]
+        : primaryHoldings;
+      const holdingsSegmentsWithPct = holdingsSegments.map(item => ({
+        ...item,
+        pct: totalAssetsUsd > 0 ? (item.usd / totalAssetsUsd) * 100 : 0
+      }));
+      const primaryHolding = holdingsSegmentsWithPct[0] || { label: 'Немає активів', usd: 0, pct: 0, color: '#94a3b8' };
+      let holdingsCursor = 0;
+      const holdingsGradientStops = holdingsSegmentsWithPct.map((item) => {
+        const start = holdingsCursor;
+        holdingsCursor += item.pct;
+        return `${item.color} ${start.toFixed(2)}% ${holdingsCursor.toFixed(2)}%`;
+      });
+      const holdingsDonutStyle = {
+        background: holdingsGradientStops.length > 0 ? `conic-gradient(${holdingsGradientStops.join(', ')})` : 'conic-gradient(#334155 0% 100%)'
       };
 
       const getAssetGeneratedIncomeUsd = (assetId) => incomes.filter(inc => inc.assetId === assetId).reduce((sum, inc) => sum + getUsdValue(inc.amount, inc.currency), 0);
@@ -528,33 +555,51 @@
             {activeTab === 'modeling' && (
               <div className="space-y-6">
                 <h3 className="text-xl font-bold text-white">Поточна Ситуація та Моделювання</h3>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 lg:col-span-1">
-                    <div className="mx-auto w-56 h-56 rounded-full p-4" style={donutStyle}>
-                      <div className="w-full h-full rounded-full bg-slate-900 flex flex-col items-center justify-center text-center">
-                        <div className="text-xs text-slate-400">Crypto + Нерухомість</div>
-                        <div className="text-2xl font-bold text-white mt-1">{pairTotalUsd > 0 ? `${cryptoPairPct.toFixed(1)} / ${realEstatePairPct.toFixed(1)}%` : '—'}</div>
-                        <div className="text-xs text-slate-500 mt-1">Ціль: {normalizedTargetCryptoPct.toFixed(0)} / {targetRealEstatePct.toFixed(0)}%</div>
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 xl:col-span-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-2xl font-bold text-white">Holdings</h4>
+                      <div className="text-sm text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">Portfolios</div>
+                    </div>
+                    <div className="mx-auto mt-5 w-60 h-60 rounded-full p-3" style={holdingsDonutStyle}>
+                      <div className="w-full h-full rounded-full bg-slate-900 flex flex-col items-center justify-center text-center px-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-300">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: primaryHolding.color }}></span>
+                          {primaryHolding.label}
+                        </div>
+                        <div className="text-4xl font-bold text-white mt-2">{formatUsd(primaryHolding.usd)}</div>
+                        <div className="text-sm text-slate-400 mt-1">{primaryHolding.pct.toFixed(2)}%</div>
                       </div>
                     </div>
-                    <div className="mt-5 space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span className="text-purple-400">Крипта (від усього портфеля)</span><span className="text-slate-200">{cryptoTotalPct.toFixed(1)}%</span></div>
-                      <div className="flex items-center justify-between"><span className="text-blue-400">Нерухомість (від усього)</span><span className="text-slate-200">{realEstateTotalPct.toFixed(1)}%</span></div>
-                      <div className="flex items-center justify-between"><span className="text-slate-400">Інші активи</span><span className="text-slate-200">{otherTotalPct.toFixed(1)}%</span></div>
+                    <div className="mt-6 space-y-3">
+                      {holdingsSegmentsWithPct.map((segment) => (
+                        <div key={segment.key} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2 text-slate-200">
+                            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: segment.color }}></span>
+                            {segment.label}
+                          </div>
+                          <span className="text-slate-100 font-medium">{segment.pct.toFixed(2)}%</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 lg:col-span-2 space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 xl:col-span-2 space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
-                        <p className="text-xs text-slate-400">Крипта зараз</p>
+                        <p className="text-xs text-slate-400">Крипта</p>
                         <p className="text-2xl font-bold text-purple-400 mt-1">{formatUsd(cryptoUsd)}</p>
-                        <p className="text-xs text-slate-500 mt-1">{cryptoPairPct.toFixed(1)}% у парі crypto+нерухомість</p>
+                        <p className="text-xs text-slate-500 mt-1">{cryptoPairPct.toFixed(1)}% у парі</p>
                       </div>
                       <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
-                        <p className="text-xs text-slate-400">Нерухомість зараз</p>
+                        <p className="text-xs text-slate-400">Нерухомість</p>
                         <p className="text-2xl font-bold text-blue-400 mt-1">{formatUsd(realEstateUsd)}</p>
-                        <p className="text-xs text-slate-500 mt-1">{realEstatePairPct.toFixed(1)}% у парі crypto+нерухомість</p>
+                        <p className="text-xs text-slate-500 mt-1">{realEstatePairPct.toFixed(1)}% у парі</p>
+                      </div>
+                      <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
+                        <p className="text-xs text-slate-400">Інші категорії</p>
+                        <p className="text-2xl font-bold text-slate-200 mt-1">{formatUsd(otherUsd)}</p>
+                        <p className="text-xs text-slate-500 mt-1">{otherTotalPct.toFixed(1)}% від портфеля</p>
                       </div>
                     </div>
 
@@ -569,27 +614,24 @@
                     </div>
 
                     <div className="bg-slate-800/40 rounded-xl border border-slate-700 p-4">
-                      <p className="text-sm text-slate-300">Щоб вийти на ціль {normalizedTargetCryptoPct.toFixed(0)} / {targetRealEstatePct.toFixed(0)}:</p>
+                      <p className="text-sm text-slate-300">Рекомендація ребалансу до цілі {normalizedTargetCryptoPct.toFixed(0)} / {targetRealEstatePct.toFixed(0)}:</p>
                       {pairTotalUsd > 0 ? (
-                        <div className="mt-2 space-y-1 text-sm">
+                        <div className="mt-2 space-y-2 text-sm">
                           <div className="flex items-center justify-between"><span className="text-slate-400">Ціль крипта:</span><span className="text-purple-300">{formatUsd(targetCryptoUsd)}</span></div>
                           <div className="flex items-center justify-between"><span className="text-slate-400">Ціль нерухомість:</span><span className="text-blue-300">{formatUsd(targetRealEstateUsd)}</span></div>
                           <div className="border-t border-slate-700 my-2"></div>
                           <div className="flex items-center justify-between">
-                            <span className="text-slate-300">Ребаланс (крипта):</span>
+                            <span className="text-slate-200">Ребаланс по крипті:</span>
                             <span className={rebalanceCryptoUsd >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
                               {rebalanceCryptoUsd >= 0 ? `+${formatUsd(rebalanceCryptoUsd)}` : formatUsd(rebalanceCryptoUsd)}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 mt-2">
-                            {rebalanceCryptoUsd >= 0 ? 'Потрібно докупити крипту та зменшити нерухомість на цю суму.' : 'Потрібно зменшити крипту та докупити/перекинути в нерухомість на цю суму.'}
-                          </p>
+                          <p className="text-xs text-slate-500">{rebalanceCryptoUsd >= 0 ? 'Докупити крипту на цю суму та зменшити нерухомість.' : 'Зменшити крипту на цю суму та додати в нерухомість.'}</p>
                         </div>
                       ) : (
                         <p className="text-sm text-slate-500 mt-2">Немає активів у категоріях «Криптовалюта» та «Нерухомість» для моделювання.</p>
                       )}
                     </div>
-                    {otherUsd > 0 && <p className="text-xs text-slate-500">Інші категорії активів ({formatUsd(otherUsd)}) в розрахунку ребалансу між crypto/нерухомістю не перерозподіляються.</p>}
                   </div>
                 </div>
               </div>
