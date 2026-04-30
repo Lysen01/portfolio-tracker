@@ -64,8 +64,8 @@
       const [exchangeRate, setExchangeRate] = useState(() => loadState('family_exchangeRate', 40));
       const [activeTab, setActiveTab] = useState('portfolio');
 
-      const [marketData, setMarketData] = useState(() => loadState('family_marketData', { BTC: 0, ETH: 0, SOL: 0, USDT: 1, XSTOCK: 0 }));
-      const [marketChanges, setMarketChanges] = useState(() => loadState('family_marketChanges', { BTC: 0, ETH: 0, SOL: 0, USDT: 0, XSTOCK: 0 }));
+      const [marketData, setMarketData] = useState(() => loadState('family_marketData', { BTC: 0, ETH: 0, SOL: 0 }));
+      const [marketChanges, setMarketChanges] = useState(() => loadState('family_marketChanges', { BTC: 0, ETH: 0, SOL: 0 }));
       const [isFetching, setIsFetching] = useState(false);
       const [lastSync, setLastSync] = useState(null);
 
@@ -125,9 +125,8 @@
           const nbuData = await nbuRes.json();
           if (nbuData && nbuData[0]) setExchangeRate(nbuData[0].rate);
 
-          const normalizeMarketTicker = (ticker) => ticker === 'XSTOCK' ? 'SPY' : ticker;
-          const assetTickers = assets.filter(a => a.type === 'crypto' && a.ticker).map(a => normalizeMarketTicker(a.ticker));
-          const uniqueTickers = [...new Set(['BTC', 'ETH', 'SOL', 'USDT', 'SPY', ...assetTickers])].join(',');
+          const assetTickers = assets.filter(a => a.type === 'crypto' && a.ticker).map(a => a.ticker);
+          const uniqueTickers = [...new Set(['BTC', 'ETH', 'SOL', ...assetTickers])].join(',');
 
           const ccRes = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${uniqueTickers}&tsyms=USD`);
           const ccData = await ccRes.json();
@@ -138,7 +137,6 @@
               Object.keys(ccData.RAW).forEach(ticker => {
                 newPrices[ticker] = ccData.RAW[ticker].USD.PRICE;
               });
-              if (ccData.RAW.SPY) newPrices.XSTOCK = ccData.RAW.SPY.USD.PRICE;
               return newPrices;
             });
 
@@ -147,38 +145,8 @@
               Object.keys(ccData.RAW).forEach(ticker => {
                 newChanges[ticker] = ccData.RAW[ticker].USD.CHANGEPCT24HOUR;
               });
-              if (ccData.RAW.SPY) newChanges.XSTOCK = ccData.RAW.SPY.USD.CHANGEPCT24HOUR;
               return newChanges;
             });
-          }
-
-          // S&P500: беремо реальний індекс з TradingView (SP:SPX), з fallback endpoint.
-          try {
-            const spPayload = JSON.stringify({
-              symbols: { tickers: ['SP:SPX'], query: { types: [] } },
-              columns: ['close', 'change']
-            });
-            const fetchSpx = (url) => fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: spPayload
-            });
-
-            let spRes = await fetchSpx('https://scanner.tradingview.com/america/scan');
-            if (!spRes.ok) spRes = await fetchSpx('https://scanner.tradingview.com/global/scan');
-            const spData = await spRes.json();
-            const spxRow = spData?.data?.[0]?.d;
-            if (Array.isArray(spxRow) && spxRow.length >= 2) {
-              const [spxPrice, spxChangePct] = spxRow;
-              if (typeof spxPrice === 'number') {
-                setMarketData(prev => ({ ...prev, XSTOCK: spxPrice }));
-              }
-              if (typeof spxChangePct === 'number') {
-                setMarketChanges(prev => ({ ...prev, XSTOCK: spxChangePct }));
-              }
-            }
-          } catch (spError) {
-            console.warn('Не вдалося оновити S&P500 з TradingView:', spError);
           }
           setLastSync(new Date());
         } catch (error) {
@@ -360,10 +328,9 @@
             <div className="w-full bg-slate-950 border-t border-slate-800 py-1.5">
               <div className="max-w-6xl mx-auto px-4 flex items-center justify-between text-xs font-medium">
                 <div className="flex items-center gap-6 overflow-x-auto">
-                  {['BTC', 'ETH', 'SOL', 'USDT'].map(t => (
+                  {['BTC', 'ETH', 'SOL'].map(t => (
                     <div key={t} className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap"><Activity size={14} className="text-blue-500"/><span className="text-slate-500">{t}:</span> {formatUsd(marketData[t] || 0)} {renderChange(marketChanges[t])}</div>
                   ))}
-                  <div className="flex items-center gap-1.5 text-slate-300 whitespace-nowrap"><span className="text-slate-500">S&P500 (XSTOCK):</span> {formatUsd(marketData.XSTOCK || 0)} {renderChange(marketChanges.XSTOCK)}</div>
                 </div>
               </div>
             </div>
@@ -514,7 +481,7 @@
                     <div className="flex flex-wrap gap-3 items-end">
                       <div className="w-40"><label className="block text-xs text-slate-400 mb-1">Категорія</label><select value={newAsset.type} onChange={handleCategoryChange} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:outline-none">{Object.entries(assetCategories).map(([key, info]) => <option key={key} value={key}>{info.label}</option>)}</select></div>
                       <div className="flex-1 min-w-[250px]"><label className="block text-xs text-slate-400 mb-1">{newAsset.type === 'crypto' ? 'Монета / Тікер' : 'Назва активу'}</label><div className="flex gap-2">
-                        {newAsset.type === 'crypto' ? (<><select value={['BTC', 'ETH', 'SOL', 'USDT', 'XSTOCK'].includes(newAsset.ticker) ? newAsset.ticker : 'custom'} onChange={(e) => { const val = e.target.value; if (val === 'custom') setNewAsset({...newAsset, ticker: '', name: ''}); else setNewAsset({...newAsset, ticker: val, name: {BTC:'Bitcoin',ETH:'Ethereum',SOL:'Solana',USDT:'Tether',XSTOCK:'S&P500 Token'}[val]}); }} className="w-40 bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:outline-none"><option value="BTC">🟠 Bitcoin (BTC)</option><option value="ETH">🔵 Ethereum (ETH)</option><option value="SOL">🟣 Solana (SOL)</option><option value="USDT">🟢 Tether (USDT)</option><option value="XSTOCK">📉 S&P500 (XSTOCK)</option><option value="custom">✏️ Інша...</option></select>{!['BTC', 'ETH', 'SOL', 'USDT', 'XSTOCK'].includes(newAsset.ticker) && (<input required type="text" value={newAsset.ticker} onChange={e => setNewAsset({...newAsset, ticker: e.target.value.toUpperCase(), name: e.target.value.toUpperCase()})} className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" placeholder="Тікер" />)}</>) : (<input required type="text" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" placeholder="Введіть назву..." />)}</div></div>
+                        {newAsset.type === 'crypto' ? (<><select value={['BTC', 'ETH', 'SOL'].includes(newAsset.ticker) ? newAsset.ticker : 'custom'} onChange={(e) => { const val = e.target.value; if (val === 'custom') setNewAsset({...newAsset, ticker: '', name: ''}); else setNewAsset({...newAsset, ticker: val, name: {BTC:'Bitcoin',ETH:'Ethereum',SOL:'Solana'}[val]}); }} className="w-40 bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:outline-none"><option value="BTC">🟠 Bitcoin (BTC)</option><option value="ETH">🔵 Ethereum (ETH)</option><option value="SOL">🟣 Solana (SOL)</option><option value="custom">✏️ Інша...</option></select>{!['BTC', 'ETH', 'SOL'].includes(newAsset.ticker) && (<input required type="text" value={newAsset.ticker} onChange={e => setNewAsset({...newAsset, ticker: e.target.value.toUpperCase(), name: e.target.value.toUpperCase()})} className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" placeholder="Тікер" />)}</>) : (<input required type="text" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" placeholder="Введіть назву..." />)}</div></div>
                       <div className="w-36"><label className="block text-xs text-slate-400 mb-1">Дата купівлі</label><input type="date" value={newAsset.date} onChange={e => setNewAsset({...newAsset, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white [color-scheme:dark]" /></div>
                     </div>
                     <div className="flex flex-wrap gap-4 items-end bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
