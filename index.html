@@ -149,6 +149,31 @@
               return newChanges;
             });
           }
+
+          // S&P500: беремо реальний індекс з TradingView (SP:SPX)
+          try {
+            const spRes = await fetch('https://scanner.tradingview.com/america/scan', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                symbols: { tickers: ['SP:SPX'], query: { types: [] } },
+                columns: ['close', 'change']
+              })
+            });
+            const spData = await spRes.json();
+            const spxRow = spData?.data?.[0]?.d;
+            if (Array.isArray(spxRow) && spxRow.length >= 2) {
+              const [spxPrice, spxChangePct] = spxRow;
+              if (typeof spxPrice === 'number') {
+                setMarketData(prev => ({ ...prev, XSTOCK: spxPrice }));
+              }
+              if (typeof spxChangePct === 'number') {
+                setMarketChanges(prev => ({ ...prev, XSTOCK: spxChangePct }));
+              }
+            }
+          } catch (spError) {
+            console.warn('Не вдалося оновити S&P500 з TradingView:', spError);
+          }
           setLastSync(new Date());
         } catch (error) {
           console.error('Помилка синхронізації ринкових даних:', error);
