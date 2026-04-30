@@ -17,7 +17,7 @@
     import {
       DollarSign, Home, Briefcase, Wallet, TrendingUp, Plus, Trash2, LayoutDashboard,
       ListTodo, ArrowRightLeft, Building, ChevronDown, ChevronRight, Check, X,
-      Banknote, Landmark, PiggyBank, Coins, CreditCard, Car, RefreshCw, Activity
+      Banknote, Landmark, PiggyBank, Coins, CreditCard, Car, RefreshCw, Activity, Pencil
     } from 'https://esm.sh/lucide-react@0.344.0';
 
     const ICON_MAP = {
@@ -106,6 +106,7 @@
       const [newCategory, setNewCategory] = useState({ label: '', iconName: 'DollarSign', colorTheme: 'blue' });
 
       const [sellingAsset, setSellingAsset] = useState(null);
+      const [editingAsset, setEditingAsset] = useState(null);
       const [paymentInputs, setPaymentInputs] = useState({});
 
       useEffect(() => { localStorage.setItem('family_exchangeRate', JSON.stringify(exchangeRate)); }, [exchangeRate]);
@@ -233,6 +234,49 @@
         setSellingAsset(null);
       };
 
+      const startEditAsset = (asset) => {
+        setSellingAsset(null);
+        setEditingAsset({
+          ...asset,
+          name: asset.name || '',
+          ticker: asset.ticker || '',
+          quantity: asset.quantity ?? '',
+          purchasePrice: asset.purchasePrice ?? '',
+          value: asset.value ?? '',
+          date: asset.date || '',
+          currency: asset.currency || 'USD'
+        });
+      };
+
+      const saveEditedAsset = (id) => {
+        if (!editingAsset || !editingAsset.name?.trim()) return;
+        const isCrypto = editingAsset.type === 'crypto';
+        if (editingAsset.purchasePrice === '' || Number.isNaN(Number(editingAsset.purchasePrice))) return;
+        if (isCrypto && (editingAsset.quantity === '' || Number.isNaN(Number(editingAsset.quantity)) || !editingAsset.ticker?.trim())) return;
+        if (!isCrypto && (editingAsset.value === '' || Number.isNaN(Number(editingAsset.value)))) return;
+
+        const normalizedAsset = {
+          ...editingAsset,
+          name: editingAsset.name.trim(),
+          purchasePrice: Number(editingAsset.purchasePrice),
+          currency: editingAsset.currency,
+          date: editingAsset.date || ''
+        };
+
+        if (isCrypto) {
+          normalizedAsset.ticker = editingAsset.ticker.trim().toUpperCase();
+          normalizedAsset.quantity = Number(editingAsset.quantity);
+          normalizedAsset.value = 0;
+        } else {
+          normalizedAsset.value = Number(editingAsset.value);
+          normalizedAsset.quantity = undefined;
+          normalizedAsset.ticker = undefined;
+        }
+
+        setAssets(prev => prev.map(a => a.id === id ? { ...a, ...normalizedAsset } : a));
+        setEditingAsset(null);
+      };
+
       const addDebt = (e) => {
         e.preventDefault();
         if (!newDebt.name.trim() || newDebt.totalAmount === '') return;
@@ -343,17 +387,83 @@
                               const pnlPercent = investedUsd > 0 ? (pnl / investedUsd) * 100 : 0;
                               const generatedUsd = getAssetGeneratedIncomeUsd(asset.id);
                               const isSelling = sellingAsset?.id === asset.id;
+                              const isEditing = editingAsset?.id === asset.id;
                               const isAutoPriced = !!(asset.ticker && asset.quantity);
 
                               return (
                                 <tr key={asset.id} className="bg-slate-900/30 border-l-2 border-l-slate-700/50">
-                                  <td className="py-3 px-4 pl-14"><div className="flex flex-col"><div className="flex items-center gap-2"><div className={`w-1.5 h-1.5 rounded-full ${isAutoPriced ? 'bg-blue-400 animate-pulse' : 'bg-slate-600'}`}></div><span className="text-sm font-medium text-slate-300">{asset.name} {asset.ticker && <span className="text-slate-500 text-xs ml-1 bg-slate-800 px-1.5 py-0.5 rounded">{asset.ticker}</span>}</span></div><div className="text-xs text-slate-500 ml-3.5 mt-1"><span>Куплено: {formatDate(asset.date)}</span>{isAutoPriced && marketData[asset.ticker] && (<span className="text-blue-400/70 border-l border-slate-700 pl-2 ml-2">Кількість: {asset.quantity} (Курс: {formatUsd(marketData[asset.ticker])})</span>)}</div></div></td>
+                                  <td className="py-3 px-4 pl-14">
+                                    {isEditing ? (
+                                      <div className="flex flex-col gap-2">
+                                        <div className="flex gap-2">
+                                          <input type="text" value={editingAsset.name} onChange={(e) => setEditingAsset({ ...editingAsset, name: e.target.value })} className="flex-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" placeholder="Назва активу" />
+                                          {asset.type === 'crypto' && (
+                                            <input type="text" value={editingAsset.ticker} onChange={(e) => setEditingAsset({ ...editingAsset, ticker: e.target.value.toUpperCase() })} className="w-24 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" placeholder="Тікер" />
+                                          )}
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                          <input type="date" value={editingAsset.date || ''} onChange={(e) => setEditingAsset({ ...editingAsset, date: e.target.value })} className="w-40 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none [color-scheme:dark]" />
+                                          <select value={editingAsset.currency} onChange={(e) => setEditingAsset({ ...editingAsset, currency: e.target.value })} className="w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none">
+                                            <option value="USD">USD</option>
+                                            <option value="UAH">UAH</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col">
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-1.5 h-1.5 rounded-full ${isAutoPriced ? 'bg-blue-400 animate-pulse' : 'bg-slate-600'}`}></div>
+                                          <span className="text-sm font-medium text-slate-300">{asset.name} {asset.ticker && <span className="text-slate-500 text-xs ml-1 bg-slate-800 px-1.5 py-0.5 rounded">{asset.ticker}</span>}</span>
+                                        </div>
+                                        <div className="text-xs text-slate-500 ml-3.5 mt-1">
+                                          <span>Куплено: {formatDate(asset.date)}</span>
+                                          {isAutoPriced && marketData[asset.ticker] && (<span className="text-blue-400/70 border-l border-slate-700 pl-2 ml-2">Кількість: {asset.quantity} (Курс: {formatUsd(marketData[asset.ticker])})</span>)}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </td>
                                   {isSelling ? (
                                     <td colSpan={4} className="py-3 px-4 bg-slate-800/80 rounded-lg"><div className="flex items-center justify-end gap-3"><span className="text-sm text-slate-300">Ціна продажу:</span><input type="number" step="any" value={sellingAsset.sellPrice} onChange={e => setSellingAsset({...sellingAsset, sellPrice: e.target.value})} className="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" /><span className="text-sm text-slate-300">Дата:</span><input type="date" value={sellingAsset.sellDate} onChange={e => setSellingAsset({...sellingAsset, sellDate: e.target.value})} className="w-32 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none [color-scheme:dark]" /></div></td>
+                                  ) : isEditing ? (
+                                    <td colSpan={4} className="py-3 px-4 bg-slate-800/80 rounded-lg">
+                                      <div className="flex items-center justify-end gap-3 flex-wrap">
+                                        <span className="text-sm text-slate-300">Вкладено:</span>
+                                        <input type="number" step="any" value={editingAsset.purchasePrice} onChange={(e) => setEditingAsset({ ...editingAsset, purchasePrice: e.target.value })} className="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" />
+                                        {asset.type === 'crypto' ? (
+                                          <>
+                                            <span className="text-sm text-slate-300">Кількість:</span>
+                                            <input type="number" step="any" value={editingAsset.quantity} onChange={(e) => setEditingAsset({ ...editingAsset, quantity: e.target.value })} className="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" />
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="text-sm text-slate-300">Поточна оцінка:</span>
+                                            <input type="number" step="any" value={editingAsset.value} onChange={(e) => setEditingAsset({ ...editingAsset, value: e.target.value })} className="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" />
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
                                   ) : (
                                     <><td className="py-3 px-4 text-right"><div className="text-sm text-slate-400">{formatUsd(investedUsd)}</div></td><td className="py-3 px-4 text-right"><div className={`text-sm font-medium ${isAutoPriced ? 'text-blue-300' : 'text-slate-200'}`}>{formatUsd(currentUsd)}</div></td><td className="py-3 px-4 text-right">{generatedUsd > 0 ? <div className="text-sm font-bold text-emerald-400">+{formatUsd(generatedUsd)}</div> : <div className="text-sm text-slate-600">—</div>}</td><td className="py-3 px-4 text-right"><div className={`text-sm font-medium ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{pnl > 0 ? '+' : ''}{formatUsd(pnl)}</div><div className={`text-xs ${pnl >= 0 ? 'text-emerald-500/70' : 'text-red-500/70'}`}>{pnlPercent.toFixed(1)}%</div></td></>
                                   )}
-                                  <td className="py-3 px-4 text-center">{isSelling ? (<div className="flex items-center justify-center gap-1"><button onClick={() => confirmSell(asset.id)} className="text-emerald-400 hover:text-emerald-300 p-1 bg-emerald-400/10 rounded"><Check size={16} /></button><button onClick={() => setSellingAsset(null)} className="text-slate-400 hover:text-slate-200 p-1 bg-slate-700 rounded"><X size={16} /></button></div>) : (<div className="flex items-center justify-center gap-2"><button onClick={(e) => { e.stopPropagation(); setSellingAsset({ id: asset.id, sellPrice: currentUsd, sellDate: new Date().toISOString().split('T')[0] }); }} className="text-blue-400 hover:text-blue-300 p-1.5 rounded-md hover:bg-slate-800"><Banknote size={16} /></button><button onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }} className="text-slate-600 hover:text-red-400 p-1.5 rounded-md hover:bg-slate-800"><Trash2 size={16} /></button></div>)}</td>
+                                  <td className="py-3 px-4 text-center">
+                                    {isSelling ? (
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button onClick={() => confirmSell(asset.id)} className="text-emerald-400 hover:text-emerald-300 p-1 bg-emerald-400/10 rounded"><Check size={16} /></button>
+                                        <button onClick={() => setSellingAsset(null)} className="text-slate-400 hover:text-slate-200 p-1 bg-slate-700 rounded"><X size={16} /></button>
+                                      </div>
+                                    ) : isEditing ? (
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button onClick={() => saveEditedAsset(asset.id)} className="text-emerald-400 hover:text-emerald-300 p-1 bg-emerald-400/10 rounded"><Check size={16} /></button>
+                                        <button onClick={() => setEditingAsset(null)} className="text-slate-400 hover:text-slate-200 p-1 bg-slate-700 rounded"><X size={16} /></button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-center gap-2">
+                                        <button onClick={(e) => { e.stopPropagation(); setSellingAsset({ id: asset.id, sellPrice: currentUsd, sellDate: new Date().toISOString().split('T')[0] }); setEditingAsset(null); }} className="text-blue-400 hover:text-blue-300 p-1.5 rounded-md hover:bg-slate-800"><Banknote size={16} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); startEditAsset(asset); }} className="text-amber-400 hover:text-amber-300 p-1.5 rounded-md hover:bg-slate-800"><Pencil size={16} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }} className="text-slate-600 hover:text-red-400 p-1.5 rounded-md hover:bg-slate-800"><Trash2 size={16} /></button>
+                                      </div>
+                                    )}
+                                  </td>
                                 </tr>
                               );
                             })}
