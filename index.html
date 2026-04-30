@@ -12,12 +12,15 @@
   <div id="root"></div>
 
   <script type="text/babel" data-type="module">
-    import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18';
+    import React, { useState, useEffect, useMemo, useRef } from 'https://esm.sh/react@18';
     import { createRoot } from 'https://esm.sh/react-dom@18/client';
+    import { initializeApp } from 'https://esm.sh/firebase@10.12.5/app';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://esm.sh/firebase@10.12.5/auth';
+    import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'https://esm.sh/firebase@10.12.5/firestore';
     import {
       DollarSign, Home, Briefcase, Wallet, TrendingUp, Plus, Trash2, LayoutDashboard,
       ListTodo, ArrowRightLeft, Building, ChevronDown, ChevronRight, Check, X,
-      Banknote, Landmark, PiggyBank, Coins, CreditCard, Car, RefreshCw, Activity, Pencil
+      Banknote, Landmark, PiggyBank, Coins, CreditCard, Car, RefreshCw, Activity, Pencil, LogIn, LogOut
     } from 'https://esm.sh/lucide-react@0.344.0';
 
     const ICON_MAP = {
@@ -59,6 +62,23 @@
       }
       return defaultValue;
     };
+
+    const FIREBASE_CONFIG = {
+      apiKey: '',
+      authDomain: '',
+      projectId: '',
+      appId: ''
+    };
+    const firebaseEnabled = Boolean(
+      FIREBASE_CONFIG.apiKey &&
+      FIREBASE_CONFIG.authDomain &&
+      FIREBASE_CONFIG.projectId &&
+      FIREBASE_CONFIG.appId
+    );
+    const firebaseApp = firebaseEnabled ? initializeApp(FIREBASE_CONFIG) : null;
+    const firebaseAuth = firebaseEnabled ? getAuth(firebaseApp) : null;
+    const firebaseDb = firebaseEnabled ? getFirestore(firebaseApp) : null;
+    const googleProvider = firebaseEnabled ? new GoogleAuthProvider() : null;
 
     function App() {
       const [exchangeRate, setExchangeRate] = useState(() => loadState('family_exchangeRate', 40));
@@ -118,6 +138,10 @@
       const [editingAsset, setEditingAsset] = useState(null);
       const [paymentInputs, setPaymentInputs] = useState({});
       const getTodayIso = () => new Date().toISOString().split('T')[0];
+      const [currentUser, setCurrentUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(firebaseEnabled);
+      const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+      const isApplyingCloudRef = useRef(false);
 
       useEffect(() => { localStorage.setItem('family_exchangeRate', JSON.stringify(exchangeRate)); }, [exchangeRate]);
       useEffect(() => { localStorage.setItem('family_categories', JSON.stringify(assetCategories)); }, [assetCategories]);
@@ -143,6 +167,89 @@
           return changed ? next : prev;
         });
       }, []);
+
+      const applyCloudPayload = (payload) => {
+        if (!payload) return;
+        isApplyingCloudRef.current = true;
+        if (payload.exchangeRate !== undefined) setExchangeRate(payload.exchangeRate);
+        if (payload.assetCategories) setAssetCategories(payload.assetCategories);
+        if (payload.expandedGroups) setExpandedGroups(payload.expandedGroups);
+        if (payload.assets) setAssets(payload.assets);
+        if (payload.debts) setDebts(payload.debts);
+        if (payload.incomes) setIncomes(payload.incomes);
+        if (payload.modelTargets) setModelTargets(payload.modelTargets);
+        if (payload.realizedPnlResetBase !== undefined) setRealizedPnlResetBase(payload.realizedPnlResetBase);
+        setTimeout(() => { isApplyingCloudRef.current = false; }, 0);
+      };
+
+      const loadCloudPortfolio = async (user) => {
+        if (!firebaseEnabled || !firebaseDb || !user?.uid) return;
+        setIsCloudSyncing(true);
+        try {
+          const ref = doc(firebaseDb, 'portfolios', user.uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) applyCloudPayload(snap.data());
+          else {
+            await setDoc(ref, {
+              exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase,
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (err) {
+          console.error('Помилка завантаження з хмари:', err);
+        } finally {
+          setIsCloudSyncing(false);
+        }
+      };
+
+      const signInWithGoogle = async () => {
+        if (!firebaseEnabled || !firebaseAuth || !googleProvider) {
+          alert('Google вхід ще не налаштований. Потрібно заповнити Firebase config.');
+          return;
+        }
+        try {
+          await signInWithPopup(firebaseAuth, googleProvider);
+        } catch (err) {
+          console.error('Помилка Google входу:', err);
+          alert('Не вдалося виконати вхід через Google');
+        }
+      };
+
+      const handleSignOut = async () => {
+        if (!firebaseAuth) return;
+        try {
+          await signOut(firebaseAuth);
+        } catch (err) {
+          console.error('Помилка виходу:', err);
+        }
+      };
+
+      useEffect(() => {
+        if (!firebaseEnabled || !firebaseAuth) return;
+        const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
+          setCurrentUser(user || null);
+          setAuthLoading(false);
+          if (user) await loadCloudPortfolio(user);
+        });
+        return () => unsub();
+      }, []);
+
+      useEffect(() => {
+        if (!firebaseEnabled || !firebaseDb || !currentUser?.uid) return;
+        if (isApplyingCloudRef.current) return;
+        const save = async () => {
+          try {
+            await setDoc(doc(firebaseDb, 'portfolios', currentUser.uid), {
+              exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase,
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          } catch (err) {
+            console.error('Помилка збереження в хмару:', err);
+          }
+        };
+        const t = setTimeout(save, 450);
+        return () => clearTimeout(t);
+      }, [currentUser, exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase]);
 
       // Якщо старий localStorage не має категорії "Інше", додаємо її автоматично.
       useEffect(() => {
@@ -503,6 +610,24 @@
                 <div><h1 className="text-xl font-bold text-white leading-tight">СІМ'Я ОЛЕКСАНДРА ЛИСЕНКА</h1><p className="text-xs text-slate-400">Family Office Dashboard</p></div>
               </div>
               <div className="flex items-center gap-3">
+                {firebaseEnabled ? (
+                  currentUser ? (
+                    <button onClick={handleSignOut} className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                      <LogOut size={14} />
+                      {currentUser.displayName || currentUser.email || 'User'}
+                    </button>
+                  ) : (
+                    <button onClick={signInWithGoogle} disabled={authLoading} className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 disabled:opacity-50">
+                      <LogIn size={14} />
+                      {authLoading ? 'Перевірка...' : 'Увійти через Google'}
+                    </button>
+                  )
+                ) : (
+                  <button disabled className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 cursor-not-allowed" title="Додай Firebase config у коді">
+                    <LogIn size={14} />
+                    Google вхід (setup)
+                  </button>
+                )}
                 <button onClick={fetchMarketData} disabled={isFetching} className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 disabled:opacity-50">
                   <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
                   {lastSync ? `Оновлено: ${lastSync.toLocaleTimeString('uk-UA', {hour: '2-digit', minute:'2-digit'})}` : 'Синхронізувати'}
@@ -552,6 +677,17 @@
                 )}
               </div>
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Залишок Боргів</p><h2 className="text-2xl font-bold text-red-400">{formatUsd(totalDebtUsd)}</h2></div>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center justify-between">
+              <span>
+                {firebaseEnabled
+                  ? currentUser
+                    ? `Хмарний профіль: ${currentUser.email || currentUser.displayName || 'Google User'}`
+                    : 'Гість: дані зберігаються локально у цьому браузері'
+                  : 'Google вхід вимкнено: заповни Firebase config у файлі index.html'}
+              </span>
+              {isCloudSyncing && <span className="text-blue-400">Синхронізація...</span>}
             </div>
 
             {activeTab === 'portfolio' && (
