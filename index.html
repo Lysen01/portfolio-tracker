@@ -736,9 +736,9 @@
               <div className="space-y-6">
                 <div className="flex justify-between items-end"><h3 className="text-xl font-bold text-white">Структура Активів (Відкриті позиції)</h3><p className="text-xs text-slate-400 flex items-center gap-1"><Activity size={12}/> Ціни крипти оновлюються автоматично</p></div>
                 <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto shadow-xl">
-                  <table className="w-full text-left border-collapse min-w-[800px]">
+                  <table className="w-full text-left border-collapse min-w-[980px]">
                     <thead>
-                      <tr className="bg-slate-800/80 text-slate-400 text-sm border-b border-slate-800"><th className="p-4">Категорія / Актив</th><th className="p-4 text-right">Вкладено</th><th className="p-4 text-right">Поточна вартість</th><th className="p-4 text-right text-emerald-400">Згенеровано (Кеш)</th><th className="p-4 text-right">P&L (Динаміка)</th><th className="p-4 text-center w-24">Дії</th></tr>
+                      <tr className="bg-slate-800/80 text-slate-400 text-sm border-b border-slate-800"><th className="p-4">Категорія / Актив</th><th className="p-4 whitespace-nowrap">Купівля</th><th className="p-4 whitespace-nowrap">Продаж</th><th className="p-4 text-right">Вкладено</th><th className="p-4 text-right">Поточна вартість</th><th className="p-4 text-right text-emerald-400">Згенеровано (Кеш)</th><th className="p-4 text-right">P&L (Динаміка)</th><th className="p-4 text-center w-24">Дії</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
                       {Object.entries(assetCategories).map(([typeKey, typeInfo]) => {
@@ -756,6 +756,8 @@
                           <React.Fragment key={typeKey}>
                             <tr className="hover:bg-slate-800/50 cursor-pointer bg-slate-800/20" onClick={() => toggleGroup(typeKey)}>
                               <td className="p-4"><div className="flex items-center gap-3"><div className="text-slate-500">{isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</div><div className={`p-2 bg-slate-800 rounded-lg border border-slate-700 ${typeInfo.color}`}><Icon size={18} /></div><div><span className="font-bold text-slate-200 text-base">{typeInfo.label}</span><div className="text-xs text-slate-500">{groupAssets.length} позицій</div></div></div></td>
+                              <td className="p-4 text-slate-600">—</td>
+                              <td className="p-4 text-slate-600">—</td>
                               <td className="p-4 text-right font-medium text-slate-300">{formatUsd(groupInvestedUsd)}</td>
                               <td className="p-4 text-right font-bold text-white text-lg">{formatUsd(groupTotalUsd)}</td>
                               <td className="p-4 text-right font-bold text-emerald-400">{groupGeneratedUsd > 0 ? `+${formatUsd(groupGeneratedUsd)}` : '—'}</td>
@@ -798,13 +800,13 @@
                                           <span className="text-sm font-medium text-slate-300">{asset.name} {asset.ticker && <span className="text-slate-500 text-xs ml-1 bg-slate-800 px-1.5 py-0.5 rounded">{asset.ticker}</span>}</span>
                                         </div>
                                         <div className="text-xs text-slate-500 ml-3.5 mt-1">
-                                          <span>Куплено: {formatDate(asset.date)}</span>
-                                          <span className="border-l border-slate-700 pl-2 ml-2">Продано: {formatDate(asset.sellDate)}</span>
                                           {isAutoPriced && marketData[asset.ticker] && (<span className="text-blue-400/70 border-l border-slate-700 pl-2 ml-2">Кількість: {asset.quantity} (Курс: {formatUsd(marketData[asset.ticker])})</span>)}
                                         </div>
                                       </div>
                                     )}
                                   </td>
+                                  <td className="py-3 px-4 text-sm text-slate-400 whitespace-nowrap">{formatDate(isEditing ? editingAsset.date : asset.date)}</td>
+                                  <td className="py-3 px-4 text-sm text-slate-400 whitespace-nowrap">{formatDate(isSelling ? sellingAsset?.sellDate : asset.sellDate)}</td>
                                   {isSelling ? (
                                     <td colSpan={4} className="py-3 px-4 bg-slate-800/80 rounded-lg"><div className="flex items-center justify-end gap-3"><span className="text-sm text-slate-300">Ціна продажу:</span><input type="number" step="any" value={sellingAsset.sellPrice} onChange={e => setSellingAsset({...sellingAsset, sellPrice: e.target.value})} className="w-28 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none" /><span className="text-sm text-slate-300">Дата:</span><input required type="date" value={sellingAsset.sellDate} onChange={e => setSellingAsset({...sellingAsset, sellDate: e.target.value})} className="w-32 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none [color-scheme:dark]" /></div></td>
                                   ) : isEditing ? (
