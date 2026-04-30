@@ -123,8 +123,9 @@
           const nbuData = await nbuRes.json();
           if (nbuData && nbuData[0]) setExchangeRate(nbuData[0].rate);
 
-          const assetTickers = assets.filter(a => a.type === 'crypto' && a.ticker).map(a => a.ticker);
-          const uniqueTickers = [...new Set(['BTC', 'ETH', 'SOL', 'USDT', 'XSTOCK', ...assetTickers])].join(',');
+          const normalizeMarketTicker = (ticker) => ticker === 'XSTOCK' ? 'SPY' : ticker;
+          const assetTickers = assets.filter(a => a.type === 'crypto' && a.ticker).map(a => normalizeMarketTicker(a.ticker));
+          const uniqueTickers = [...new Set(['BTC', 'ETH', 'SOL', 'USDT', 'SPY', ...assetTickers])].join(',');
 
           const ccRes = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${uniqueTickers}&tsyms=USD`);
           const ccData = await ccRes.json();
@@ -135,6 +136,7 @@
               Object.keys(ccData.RAW).forEach(ticker => {
                 newPrices[ticker] = ccData.RAW[ticker].USD.PRICE;
               });
+              if (ccData.RAW.SPY) newPrices.XSTOCK = ccData.RAW.SPY.USD.PRICE;
               return newPrices;
             });
 
@@ -143,6 +145,7 @@
               Object.keys(ccData.RAW).forEach(ticker => {
                 newChanges[ticker] = ccData.RAW[ticker].USD.CHANGEPCT24HOUR;
               });
+              if (ccData.RAW.SPY) newChanges.XSTOCK = ccData.RAW.SPY.USD.CHANGEPCT24HOUR;
               return newChanges;
             });
           }
