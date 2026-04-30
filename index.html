@@ -183,7 +183,8 @@
       const totalDebtUsd = debts.reduce((sum, debt) => sum + getUsdValue(getRemainingDebt(debt), debt.currency), 0);
       const netWorthUsd = totalAssetsUsd - totalDebtUsd;
       const monthlyIncomeUsd = incomes.reduce((sum, inc) => sum + getUsdValue(inc.amount, inc.currency), 0);
-      const totalPnLUsd = (totalAssetsUsd - totalInvestedUsd) + soldAssets.reduce((sum, a) => sum + (getUsdValue(getAssetCurrentValue(a), a.currency) - getUsdValue(a.purchasePrice, a.currency)), 0);
+      const openPnLUsd = totalAssetsUsd - totalInvestedUsd;
+      const realizedPnLUsd = soldAssets.reduce((sum, a) => sum + (getUsdValue(getAssetCurrentValue(a), a.currency) - getUsdValue(a.purchasePrice, a.currency)), 0);
       const cryptoUsd = activeAssets.filter(a => a.type === 'crypto').reduce((sum, a) => sum + getUsdValue(getAssetCurrentValue(a), a.currency), 0);
       const realEstateUsd = activeAssets.filter(a => a.type === 'real_estate').reduce((sum, a) => sum + getUsdValue(getAssetCurrentValue(a), a.currency), 0);
       const otherUsd = Math.max(totalAssetsUsd - cryptoUsd - realEstateUsd, 0);
@@ -367,7 +368,15 @@
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Чистий Капітал</p><h2 className="text-2xl font-bold text-white">{formatUsd(netWorthUsd)}</h2></div>
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Вкладено</p><h2 className="text-2xl font-bold text-slate-300">{formatUsd(totalInvestedUsd)}</h2></div>
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Поточна Вартість</p><h2 className="text-2xl font-bold text-blue-400">{formatUsd(totalAssetsUsd)}</h2></div>
-              <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Загальний P&L</p><h2 className={`text-2xl font-bold ${totalPnLUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{totalPnLUsd > 0 ? '+' : ''}{formatUsd(totalPnLUsd)}</h2></div>
+              <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50">
+                <p className="text-sm text-slate-400 mb-1">P&L (Відкриті позиції)</p>
+                <h2 className={`text-2xl font-bold ${openPnLUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{openPnLUsd > 0 ? '+' : ''}{formatUsd(openPnLUsd)}</h2>
+                {soldAssets.length > 0 && (
+                  <p className={`text-xs mt-1 ${realizedPnLUsd >= 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>
+                    Реалізований: {realizedPnLUsd > 0 ? '+' : ''}{formatUsd(realizedPnLUsd)}
+                  </p>
+                )}
+              </div>
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Залишок Боргів</p><h2 className="text-2xl font-bold text-red-400">{formatUsd(totalDebtUsd)}</h2></div>
             </div>
 
