@@ -117,6 +117,7 @@
       const [sellingAsset, setSellingAsset] = useState(null);
       const [editingAsset, setEditingAsset] = useState(null);
       const [paymentInputs, setPaymentInputs] = useState({});
+      const getTodayIso = () => new Date().toISOString().split('T')[0];
 
       useEffect(() => { localStorage.setItem('family_exchangeRate', JSON.stringify(exchangeRate)); }, [exchangeRate]);
       useEffect(() => { localStorage.setItem('family_categories', JSON.stringify(assetCategories)); }, [assetCategories]);
@@ -128,6 +129,20 @@
       useEffect(() => { localStorage.setItem('family_marketChanges', JSON.stringify(marketChanges)); }, [marketChanges]);
       useEffect(() => { localStorage.setItem('family_modelTargets', JSON.stringify(modelTargets)); }, [modelTargets]);
       useEffect(() => { localStorage.setItem('family_realizedPnlResetBase', JSON.stringify(realizedPnlResetBase)); }, [realizedPnlResetBase]);
+      useEffect(() => {
+        setAssets(prev => {
+          let changed = false;
+          const fallbackDate = getTodayIso();
+          const next = prev.map(asset => {
+            if (!asset.date) {
+              changed = true;
+              return { ...asset, date: fallbackDate };
+            }
+            return asset;
+          });
+          return changed ? next : prev;
+        });
+      }, []);
 
       // Якщо старий localStorage не має категорії "Інше", додаємо її автоматично.
       useEffect(() => {
@@ -299,7 +314,10 @@
       const addAsset = (e) => {
         e.preventDefault();
         const isCrypto = newAsset.type === 'crypto';
-        if (!newAsset.date) return;
+        if (!newAsset.date) {
+          alert('Дата купівлі обовʼязкова');
+          return;
+        }
         if (newAsset.purchasePrice === '') return;
         if (isCrypto && (newAsset.quantity === '' || !newAsset.ticker)) return;
         if (!isCrypto && newAsset.value === '') return;
@@ -319,7 +337,11 @@
       };
 
       const confirmSell = (id) => {
-        if (!sellingAsset || sellingAsset.sellPrice === '' || !sellingAsset.sellDate) return;
+        if (!sellingAsset || sellingAsset.sellPrice === '') return;
+        if (!sellingAsset.sellDate) {
+          alert('Дата продажу обовʼязкова');
+          return;
+        }
         setAssets(prev => prev.map(a => a.id === id ? { ...a, status: 'sold', value: Number(sellingAsset.sellPrice), sellDate: sellingAsset.sellDate } : a));
         setSellingAsset(null);
       };
@@ -340,7 +362,10 @@
 
       const saveEditedAsset = (id) => {
         if (!editingAsset || !editingAsset.name?.trim()) return;
-        if (!editingAsset.date) return;
+        if (!editingAsset.date) {
+          alert('Дата купівлі обовʼязкова');
+          return;
+        }
         const isCrypto = editingAsset.type === 'crypto';
         if (editingAsset.purchasePrice === '' || Number.isNaN(Number(editingAsset.purchasePrice))) return;
         if (isCrypto && (editingAsset.quantity === '' || Number.isNaN(Number(editingAsset.quantity)) || !editingAsset.ticker?.trim())) return;
@@ -385,7 +410,11 @@
       const removeDebtPayment = (debtId, paymentId) => setDebts(prev => prev.map(d => d.id === debtId ? { ...d, payments: d.payments.filter(p => p.id !== paymentId) } : d));
       const addIncome = (e) => {
         e.preventDefault();
-        if (!newIncome.assetId || newIncome.amount === '' || !newIncome.date) return;
+        if (!newIncome.assetId || newIncome.amount === '') return;
+        if (!newIncome.date) {
+          alert('Дата надходження обовʼязкова');
+          return;
+        }
         setIncomes(prev => [...prev, { ...newIncome, id: Date.now(), assetId: Number(newIncome.assetId), amount: Number(newIncome.amount) }]);
         setNewIncome({ assetId: '', amount: '', currency: 'UAH', date: '' });
       };
