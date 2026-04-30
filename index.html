@@ -76,10 +76,12 @@
       messagingSenderId: '941488460482',
       appId: '1:941488460482:web:adf3d965a1c128d125215b'
     };
-    const firebaseEnabled = false;
-    const firebaseAuth = null;
-    const firebaseDb = null;
-    const googleProvider = null;
+    const firebaseConfigured = Boolean(
+      FIREBASE_CONFIG.apiKey &&
+      FIREBASE_CONFIG.authDomain &&
+      FIREBASE_CONFIG.projectId &&
+      FIREBASE_CONFIG.appId
+    );
 
     function App() {
       const [exchangeRate, setExchangeRate] = useState(() => loadState('family_exchangeRate', 40));
@@ -140,9 +142,12 @@
       const [paymentInputs, setPaymentInputs] = useState({});
       const getTodayIso = () => new Date().toISOString().split('T')[0];
       const [currentUser, setCurrentUser] = useState(null);
-      const [authLoading, setAuthLoading] = useState(firebaseEnabled);
+      const [authLoading, setAuthLoading] = useState(firebaseConfigured);
       const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+      const [firebaseReady, setFirebaseReady] = useState(false);
+      const [firebaseInitError, setFirebaseInitError] = useState('');
       const isApplyingCloudRef = useRef(false);
+      const firebaseCtxRef = useRef(null);
 
       useEffect(() => { localStorage.setItem('family_exchangeRate', JSON.stringify(exchangeRate)); }, [exchangeRate]);
       useEffect(() => { localStorage.setItem('family_categories', JSON.stringify(assetCategories)); }, [assetCategories]);
@@ -169,6 +174,38 @@
         });
       }, []);
 
+      useEffect(() => {
+        if (!firebaseConfigured) {
+          setAuthLoading(false);
+          return;
+        }
+        let cancelled = false;
+        const initFirebase = async () => {
+          try {
+            const [{ initializeApp }, authMod, dbMod] = await Promise.all([
+              import('https://esm.sh/firebase@10.12.5/app'),
+              import('https://esm.sh/firebase@10.12.5/auth'),
+              import('https://esm.sh/firebase@10.12.5/firestore')
+            ]);
+            if (cancelled) return;
+            const app = initializeApp(FIREBASE_CONFIG);
+            const auth = authMod.getAuth(app);
+            const db = dbMod.getFirestore(app);
+            const provider = new authMod.GoogleAuthProvider();
+            firebaseCtxRef.current = { app, auth, db, authMod, dbMod, provider };
+            setFirebaseReady(true);
+            setFirebaseInitError('');
+          } catch (err) {
+            console.error('Помилка ініціалізації Firebase:', err);
+            if (!cancelled) setFirebaseInitError('Не вдалося ініціалізувати Firebase');
+          } finally {
+            if (!cancelled) setAuthLoading(false);
+          }
+        };
+        initFirebase();
+        return () => { cancelled = true; };
+      }, []);
+
       const applyCloudPayload = (payload) => {
         if (!payload) return;
         isApplyingCloudRef.current = true;
@@ -184,16 +221,17 @@
       };
 
       const loadCloudPortfolio = async (user) => {
-        if (!firebaseEnabled || !firebaseDb || !user?.uid) return;
+        const ctx = firebaseCtxRef.current;
+        if (!firebaseReady || !ctx || !user?.uid) return;
         setIsCloudSyncing(true);
         try {
-          const ref = doc(firebaseDb, 'portfolios', user.uid);
-          const snap = await getDoc(ref);
+          const ref = ctx.dbMod.doc(ctx.db, 'portfolios', user.uid);
+          const snap = await ctx.dbMod.getDoc(ref);
           if (snap.exists()) applyCloudPayload(snap.data());
           else {
-            await setDoc(ref, {
+            await ctx.dbMod.setDoc(ref, {
               exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase,
-              updatedAt: serverTimestamp()
+              updatedAt: ctx.dbMod.serverTimestamp()
             }, { merge: true });
           }
         } catch (err) {
@@ -204,12 +242,13 @@
       };
 
       const signInWithGoogle = async () => {
-        if (!firebaseEnabled || !firebaseAuth || !googleProvider) {
+        const ctx = firebaseCtxRef.current;
+        if (!firebaseReady || !ctx) {
           alert('Google вхід ще не налаштований. Потрібно заповнити Firebase config.');
           return;
         }
         try {
-          await signInWithPopup(firebaseAuth, googleProvider);
+          await ctx.authMod.signInWithPopup(ctx.auth, ctx.provider);
         } catch (err) {
           console.error('Помилка Google входу:', err);
           alert('Не вдалося виконати вхід через Google');
@@ -217,32 +256,34 @@
       };
 
       const handleSignOut = async () => {
-        if (!firebaseAuth) return;
+        const ctx = firebaseCtxRef.current;
+        if (!ctx) return;
         try {
-          await signOut(firebaseAuth);
+          await ctx.authMod.signOut(ctx.auth);
         } catch (err) {
           console.error('Помилка виходу:', err);
         }
       };
 
       useEffect(() => {
-        if (!firebaseEnabled || !firebaseAuth) return;
-        const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
+        const ctx = firebaseCtxRef.current;
+        if (!firebaseReady || !ctx) return;
+        const unsub = ctx.authMod.onAuthStateChanged(ctx.auth, async (user) => {
           setCurrentUser(user || null);
-          setAuthLoading(false);
           if (user) await loadCloudPortfolio(user);
         });
         return () => unsub();
-      }, []);
+      }, [firebaseReady]);
 
       useEffect(() => {
-        if (!firebaseEnabled || !firebaseDb || !currentUser?.uid) return;
+        const ctx = firebaseCtxRef.current;
+        if (!firebaseReady || !ctx || !currentUser?.uid) return;
         if (isApplyingCloudRef.current) return;
         const save = async () => {
           try {
-            await setDoc(doc(firebaseDb, 'portfolios', currentUser.uid), {
+            await ctx.dbMod.setDoc(ctx.dbMod.doc(ctx.db, 'portfolios', currentUser.uid), {
               exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase,
-              updatedAt: serverTimestamp()
+              updatedAt: ctx.dbMod.serverTimestamp()
             }, { merge: true });
           } catch (err) {
             console.error('Помилка збереження в хмару:', err);
@@ -250,7 +291,7 @@
         };
         const t = setTimeout(save, 450);
         return () => clearTimeout(t);
-      }, [currentUser, exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase]);
+      }, [firebaseReady, currentUser, exchangeRate, assetCategories, expandedGroups, assets, debts, incomes, modelTargets, realizedPnlResetBase]);
 
       // Якщо старий localStorage не має категорії "Інше", додаємо її автоматично.
       useEffect(() => {
@@ -611,16 +652,16 @@
                 <div><h1 className="text-xl font-bold text-white leading-tight">СІМ'Я ОЛЕКСАНДРА ЛИСЕНКА</h1><p className="text-xs text-slate-400">Family Office Dashboard</p></div>
               </div>
               <div className="flex items-center gap-3">
-                {firebaseEnabled ? (
+                {firebaseConfigured ? (
                   currentUser ? (
                     <button onClick={handleSignOut} className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
                       <LogOut size={14} />
                       {currentUser.displayName || currentUser.email || 'User'}
                     </button>
                   ) : (
-                    <button onClick={signInWithGoogle} disabled={authLoading} className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 disabled:opacity-50">
+                    <button onClick={signInWithGoogle} disabled={authLoading || !firebaseReady} className="flex items-center gap-2 text-xs text-slate-300 hover:text-white transition-colors bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 disabled:opacity-50">
                       <LogIn size={14} />
-                      {authLoading ? 'Перевірка...' : 'Увійти через Google'}
+                      {authLoading || !firebaseReady ? 'Підключення...' : 'Увійти через Google'}
                     </button>
                   )
                 ) : (
@@ -682,10 +723,10 @@
 
             <div className="bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center justify-between">
               <span>
-                {firebaseEnabled
+                {firebaseConfigured
                   ? currentUser
                     ? `Хмарний профіль: ${currentUser.email || currentUser.displayName || 'Google User'}`
-                    : 'Гість: дані зберігаються локально у цьому браузері'
+                    : firebaseInitError ? firebaseInitError : 'Гість: дані зберігаються локально у цьому браузері'
                   : 'Google вхід вимкнено: заповни Firebase config у файлі index.html'}
               </span>
               {isCloudSyncing && <span className="text-blue-400">Синхронізація...</span>}
