@@ -104,7 +104,12 @@
       const [newDebt, setNewDebt] = useState({ name: '', totalAmount: '', currency: 'USD' });
       const [newIncome, setNewIncome] = useState({ assetId: '', amount: '', currency: 'UAH', date: '' });
       const [newCategory, setNewCategory] = useState({ label: '', iconName: 'DollarSign', colorTheme: 'blue' });
-      const [targetCryptoPct, setTargetCryptoPct] = useState(() => loadState('family_targetCryptoPct', 55));
+      const [modelTargets, setModelTargets] = useState(() => loadState('family_modelTargets', [
+        { id: 1, type: 'crypto', pct: 55 },
+        { id: 2, type: 'real_estate', pct: 45 }
+      ]));
+      const [newModelTargetType, setNewModelTargetType] = useState('crypto');
+      const [realizedPnlResetBase, setRealizedPnlResetBase] = useState(() => loadState('family_realizedPnlResetBase', 0));
 
       const [sellingAsset, setSellingAsset] = useState(null);
       const [editingAsset, setEditingAsset] = useState(null);
@@ -118,7 +123,8 @@
       useEffect(() => { localStorage.setItem('family_incomes', JSON.stringify(incomes)); }, [incomes]);
       useEffect(() => { localStorage.setItem('family_marketData', JSON.stringify(marketData)); }, [marketData]);
       useEffect(() => { localStorage.setItem('family_marketChanges', JSON.stringify(marketChanges)); }, [marketChanges]);
-      useEffect(() => { localStorage.setItem('family_targetCryptoPct', JSON.stringify(targetCryptoPct)); }, [targetCryptoPct]);
+      useEffect(() => { localStorage.setItem('family_modelTargets', JSON.stringify(modelTargets)); }, [modelTargets]);
+      useEffect(() => { localStorage.setItem('family_realizedPnlResetBase', JSON.stringify(realizedPnlResetBase)); }, [realizedPnlResetBase]);
 
       const fetchMarketData = async () => {
         setIsFetching(true);
@@ -184,18 +190,11 @@
       const netWorthUsd = totalAssetsUsd - totalDebtUsd;
       const monthlyIncomeUsd = incomes.reduce((sum, inc) => sum + getUsdValue(inc.amount, inc.currency), 0);
       const openPnLUsd = totalAssetsUsd - totalInvestedUsd;
-      const realizedPnLUsd = soldAssets.reduce((sum, a) => sum + (getUsdValue(getAssetCurrentValue(a), a.currency) - getUsdValue(a.purchasePrice, a.currency)), 0);
+      const rawRealizedPnLUsd = soldAssets.reduce((sum, a) => sum + (getUsdValue(getAssetCurrentValue(a), a.currency) - getUsdValue(a.purchasePrice, a.currency)), 0);
+      const realizedPnLUsd = rawRealizedPnLUsd - Number(realizedPnlResetBase || 0);
       const cryptoUsd = activeAssets.filter(a => a.type === 'crypto').reduce((sum, a) => sum + getUsdValue(getAssetCurrentValue(a), a.currency), 0);
       const realEstateUsd = activeAssets.filter(a => a.type === 'real_estate').reduce((sum, a) => sum + getUsdValue(getAssetCurrentValue(a), a.currency), 0);
       const otherUsd = Math.max(totalAssetsUsd - cryptoUsd - realEstateUsd, 0);
-      const pairTotalUsd = cryptoUsd + realEstateUsd;
-      const normalizedTargetCryptoPct = Math.min(100, Math.max(0, Number(targetCryptoPct) || 0));
-      const targetRealEstatePct = 100 - normalizedTargetCryptoPct;
-      const targetCryptoUsd = pairTotalUsd * (normalizedTargetCryptoPct / 100);
-      const targetRealEstateUsd = pairTotalUsd * (targetRealEstatePct / 100);
-      const rebalanceCryptoUsd = targetCryptoUsd - cryptoUsd;
-      const cryptoPairPct = pairTotalUsd > 0 ? (cryptoUsd / pairTotalUsd) * 100 : 0;
-      const realEstatePairPct = pairTotalUsd > 0 ? (realEstateUsd / pairTotalUsd) * 100 : 0;
       const cryptoTotalPct = totalAssetsUsd > 0 ? (cryptoUsd / totalAssetsUsd) * 100 : 0;
       const realEstateTotalPct = totalAssetsUsd > 0 ? (realEstateUsd / totalAssetsUsd) * 100 : 0;
       const otherTotalPct = Math.max(100 - cryptoTotalPct - realEstateTotalPct, 0);
@@ -229,6 +228,22 @@
       const holdingsDonutStyle = {
         background: holdingsGradientStops.length > 0 ? `conic-gradient(${holdingsGradientStops.join(', ')})` : 'conic-gradient(#334155 0% 100%)'
       };
+      const holdingsUsdByType = holdingsByType.reduce((acc, item) => ({ ...acc, [item.key]: item.usd }), {});
+      const modelTargetsTotalPct = modelTargets.reduce((sum, target) => sum + (Number(target.pct) || 0), 0);
+      const modelRebalanceRows = modelTargets
+        .filter(target => assetCategories[target.type])
+        .map(target => {
+          const targetPct = Number(target.pct) || 0;
+          const currentUsd = holdingsUsdByType[target.type] || 0;
+          const targetUsd = totalAssetsUsd * (targetPct / 100);
+          return {
+            ...target,
+            label: assetCategories[target.type].label,
+            currentUsd,
+            targetUsd,
+            deltaUsd: targetUsd - currentUsd
+          };
+        });
 
       const getAssetGeneratedIncomeUsd = (assetId) => incomes.filter(inc => inc.assetId === assetId).reduce((sum, inc) => sum + getUsdValue(inc.amount, inc.currency), 0);
       const formatUsd = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
@@ -351,6 +366,13 @@
       const removeAsset = (id) => setAssets(prev => prev.filter(a => a.id !== id));
       const removeDebt = (id) => setDebts(prev => prev.filter(d => d.id !== id));
       const removeIncome = (id) => setIncomes(prev => prev.filter(i => i.id !== id));
+      const resetRealizedPnL = () => setRealizedPnlResetBase(rawRealizedPnLUsd);
+      const updateModelTarget = (id, patch) => setModelTargets(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+      const removeModelTarget = (id) => setModelTargets(prev => prev.filter(item => item.id !== id));
+      const addModelTarget = () => {
+        if (!newModelTargetType || modelTargets.some(item => item.type === newModelTargetType)) return;
+        setModelTargets(prev => [...prev, { id: Date.now(), type: newModelTargetType, pct: 0 }]);
+      };
 
       return (
         <div className="text-slate-200 font-sans pb-12 w-full">
@@ -399,9 +421,14 @@
                 <p className="text-sm text-slate-400 mb-1">P&L (Відкриті позиції)</p>
                 <h2 className={`text-2xl font-bold ${openPnLUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{openPnLUsd > 0 ? '+' : ''}{formatUsd(openPnLUsd)}</h2>
                 {soldAssets.length > 0 && (
-                  <p className={`text-xs mt-1 ${realizedPnLUsd >= 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>
-                    Реалізований: {realizedPnLUsd > 0 ? '+' : ''}{formatUsd(realizedPnLUsd)}
-                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className={`text-xs ${realizedPnLUsd >= 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>
+                      Реалізований: {realizedPnLUsd > 0 ? '+' : ''}{formatUsd(realizedPnLUsd)}
+                    </p>
+                    <button onClick={resetRealizedPnL} className="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-0.5 border border-slate-700 rounded">
+                      Обнулити
+                    </button>
+                  </div>
                 )}
               </div>
               <div className="bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50"><p className="text-sm text-slate-400 mb-1">Залишок Боргів</p><h2 className="text-2xl font-bold text-red-400">{formatUsd(totalDebtUsd)}</h2></div>
@@ -589,12 +616,12 @@
                       <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
                         <p className="text-xs text-slate-400">Крипта</p>
                         <p className="text-2xl font-bold text-purple-400 mt-1">{formatUsd(cryptoUsd)}</p>
-                        <p className="text-xs text-slate-500 mt-1">{cryptoPairPct.toFixed(1)}% у парі</p>
+                        <p className="text-xs text-slate-500 mt-1">{cryptoTotalPct.toFixed(1)}% від усього портфеля</p>
                       </div>
                       <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
                         <p className="text-xs text-slate-400">Нерухомість</p>
                         <p className="text-2xl font-bold text-blue-400 mt-1">{formatUsd(realEstateUsd)}</p>
-                        <p className="text-xs text-slate-500 mt-1">{realEstatePairPct.toFixed(1)}% у парі</p>
+                        <p className="text-xs text-slate-500 mt-1">{realEstateTotalPct.toFixed(1)}% від усього портфеля</p>
                       </div>
                       <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
                         <p className="text-xs text-slate-400">Інші категорії</p>
@@ -604,33 +631,45 @@
                     </div>
 
                     <div className="bg-slate-800/40 rounded-xl border border-slate-700 p-4">
-                      <label className="block text-sm font-medium text-slate-300 mb-2">Цільова частка крипти (%)</label>
-                      <div className="flex items-center gap-3">
-                        <input type="range" min="0" max="100" step="1" value={normalizedTargetCryptoPct} onChange={(e) => setTargetCryptoPct(Number(e.target.value))} className="w-full accent-violet-500" />
-                        <input type="number" min="0" max="100" step="1" value={normalizedTargetCryptoPct} onChange={(e) => setTargetCryptoPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none text-right" />
-                        <span className="text-slate-400 text-sm">%</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm font-medium text-slate-300">Цільовий розподіл портфеля</label>
+                        <span className={`text-xs ${Math.abs(modelTargetsTotalPct - 100) < 0.001 ? 'text-emerald-400' : 'text-amber-400'}`}>Сума: {modelTargetsTotalPct.toFixed(1)}%</span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-2">Нерухомість автоматично: {targetRealEstatePct.toFixed(0)}%</p>
+                      <div className="space-y-2">
+                        {modelTargets.map((target) => (
+                          <div key={target.id} className="flex items-center gap-2">
+                            <select value={target.type} onChange={(e) => updateModelTarget(target.id, { type: e.target.value })} className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none">
+                              {Object.entries(assetCategories).map(([key, info]) => <option key={key} value={key}>{info.label}</option>)}
+                            </select>
+                            <input type="number" min="0" max="100" step="0.1" value={target.pct} onChange={(e) => updateModelTarget(target.id, { pct: Math.max(0, Number(e.target.value) || 0) })} className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white text-right focus:outline-none" />
+                            <span className="text-slate-400 text-sm">%</span>
+                            <button onClick={() => removeModelTarget(target.id)} className="text-slate-500 hover:text-red-400 p-1.5 rounded-md hover:bg-slate-800"><Trash2 size={15} /></button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <select value={newModelTargetType} onChange={(e) => setNewModelTargetType(e.target.value)} className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none">
+                          {Object.entries(assetCategories).filter(([key]) => !modelTargets.some(item => item.type === key)).map(([key, info]) => <option key={key} value={key}>{info.label}</option>)}
+                        </select>
+                        <button onClick={addModelTarget} className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded text-sm font-medium">Додати</button>
+                      </div>
                     </div>
 
                     <div className="bg-slate-800/40 rounded-xl border border-slate-700 p-4">
-                      <p className="text-sm text-slate-300">Рекомендація ребалансу до цілі {normalizedTargetCryptoPct.toFixed(0)} / {targetRealEstatePct.toFixed(0)}:</p>
-                      {pairTotalUsd > 0 ? (
-                        <div className="mt-2 space-y-2 text-sm">
-                          <div className="flex items-center justify-between"><span className="text-slate-400">Ціль крипта:</span><span className="text-purple-300">{formatUsd(targetCryptoUsd)}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-400">Ціль нерухомість:</span><span className="text-blue-300">{formatUsd(targetRealEstateUsd)}</span></div>
-                          <div className="border-t border-slate-700 my-2"></div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-200">Ребаланс по крипті:</span>
-                            <span className={rebalanceCryptoUsd >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-                              {rebalanceCryptoUsd >= 0 ? `+${formatUsd(rebalanceCryptoUsd)}` : formatUsd(rebalanceCryptoUsd)}
-                            </span>
+                      <p className="text-sm text-slate-300 mb-2">Рекомендація ребалансу по заданих цілях:</p>
+                      <div className="space-y-2">
+                        {modelRebalanceRows.map((row) => (
+                          <div key={row.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+                            <div className="text-slate-200 font-medium">{row.label}</div>
+                            <div className="text-slate-400">Зараз: <span className="text-slate-200">{formatUsd(row.currentUsd)}</span></div>
+                            <div className="text-slate-400">Ціль: <span className="text-slate-200">{formatUsd(row.targetUsd)}</span></div>
+                            <div className={row.deltaUsd >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
+                              {row.deltaUsd >= 0 ? `+${formatUsd(row.deltaUsd)}` : formatUsd(row.deltaUsd)}
+                            </div>
                           </div>
-                          <p className="text-xs text-slate-500">{rebalanceCryptoUsd >= 0 ? 'Докупити крипту на цю суму та зменшити нерухомість.' : 'Зменшити крипту на цю суму та додати в нерухомість.'}</p>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-slate-500 mt-2">Немає активів у категоріях «Криптовалюта» та «Нерухомість» для моделювання.</p>
-                      )}
+                        ))}
+                      </div>
+                      {modelRebalanceRows.length === 0 && <p className="text-sm text-slate-500">Додай хоча б одну ціль у розподіл портфеля.</p>}
                     </div>
                   </div>
                 </div>
