@@ -64,8 +64,8 @@
       const [exchangeRate, setExchangeRate] = useState(() => loadState('family_exchangeRate', 40));
       const [activeTab, setActiveTab] = useState('portfolio');
 
-      const [marketData, setMarketData] = useState({ BTC: 0, ETH: 0, SOL: 0, USDT: 1, XSTOCK: 0 });
-      const [marketChanges, setMarketChanges] = useState({ BTC: 0, ETH: 0, SOL: 0, USDT: 0, XSTOCK: 0 });
+      const [marketData, setMarketData] = useState(() => loadState('family_marketData', { BTC: 0, ETH: 0, SOL: 0, USDT: 1, XSTOCK: 0 }));
+      const [marketChanges, setMarketChanges] = useState(() => loadState('family_marketChanges', { BTC: 0, ETH: 0, SOL: 0, USDT: 0, XSTOCK: 0 }));
       const [isFetching, setIsFetching] = useState(false);
       const [lastSync, setLastSync] = useState(null);
 
@@ -115,6 +115,8 @@
       useEffect(() => { localStorage.setItem('family_assets', JSON.stringify(assets)); }, [assets]);
       useEffect(() => { localStorage.setItem('family_debts', JSON.stringify(debts)); }, [debts]);
       useEffect(() => { localStorage.setItem('family_incomes', JSON.stringify(incomes)); }, [incomes]);
+      useEffect(() => { localStorage.setItem('family_marketData', JSON.stringify(marketData)); }, [marketData]);
+      useEffect(() => { localStorage.setItem('family_marketChanges', JSON.stringify(marketChanges)); }, [marketChanges]);
 
       const fetchMarketData = async () => {
         setIsFetching(true);
@@ -150,16 +152,20 @@
             });
           }
 
-          // S&P500: беремо реальний індекс з TradingView (SP:SPX)
+          // S&P500: беремо реальний індекс з TradingView (SP:SPX), з fallback endpoint.
           try {
-            const spRes = await fetch('https://scanner.tradingview.com/america/scan', {
+            const spPayload = JSON.stringify({
+              symbols: { tickers: ['SP:SPX'], query: { types: [] } },
+              columns: ['close', 'change']
+            });
+            const fetchSpx = (url) => fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                symbols: { tickers: ['SP:SPX'], query: { types: [] } },
-                columns: ['close', 'change']
-              })
+              body: spPayload
             });
+
+            let spRes = await fetchSpx('https://scanner.tradingview.com/america/scan');
+            if (!spRes.ok) spRes = await fetchSpx('https://scanner.tradingview.com/global/scan');
             const spData = await spRes.json();
             const spxRow = spData?.data?.[0]?.d;
             if (Array.isArray(spxRow) && spxRow.length >= 2) {
