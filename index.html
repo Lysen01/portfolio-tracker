@@ -14,9 +14,6 @@
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useMemo, useRef } from 'https://esm.sh/react@18';
     import { createRoot } from 'https://esm.sh/react-dom@18/client';
-    import { initializeApp } from 'https://esm.sh/firebase@10.12.5/app';
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://esm.sh/firebase@10.12.5/auth';
-    import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'https://esm.sh/firebase@10.12.5/firestore';
     import {
       DollarSign, Home, Briefcase, Wallet, TrendingUp, Plus, Trash2, LayoutDashboard,
       ListTodo, ArrowRightLeft, Building, ChevronDown, ChevronRight, Check, X,
@@ -71,16 +68,10 @@
       messagingSenderId: '941488460482',
       appId: '1:941488460482:web:adf3d965a1c128d125215b'
     };
-    const firebaseEnabled = Boolean(
-      FIREBASE_CONFIG.apiKey &&
-      FIREBASE_CONFIG.authDomain &&
-      FIREBASE_CONFIG.projectId &&
-      FIREBASE_CONFIG.appId
-    );
-    const firebaseApp = firebaseEnabled ? initializeApp(FIREBASE_CONFIG) : null;
-    const firebaseAuth = firebaseEnabled ? getAuth(firebaseApp) : null;
-    const firebaseDb = firebaseEnabled ? getFirestore(firebaseApp) : null;
-    const googleProvider = firebaseEnabled ? new GoogleAuthProvider() : null;
+    const firebaseEnabled = false;
+    const firebaseAuth = null;
+    const firebaseDb = null;
+    const googleProvider = null;
 
     function App() {
       const [exchangeRate, setExchangeRate] = useState(() => loadState('family_exchangeRate', 40));
